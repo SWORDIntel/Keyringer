@@ -1,0 +1,16 @@
+{
+  "_comment": "Seccomp deny-overlay for services that have no business touching the kernel keyring: makes add_key/request_key/keyctl fail with EPERM, which breaks Keyringer/Dntry-class stash loaders at phase 1. Use as a Docker/containerd seccomp profile for daemons (default-allow profile with three errno'd syscalls). For maximum-strictness hosts, prefer a default-allowlist profile instead. Load: docker run --security-opt seccomp=keyringer-deny.seccomp.json ... or merge into an existing profile.",
+  "defaultAction": "SCMP_ACT_ALLOW",
+  "defaultErrnoRet": 1,
+  "archMap": [
+    { "architecture": "SCMP_ARCH_X86_64", "subArchitectures": ["SCMP_ARCH_X86", "SCMP_ARCH_X32"] },
+    { "architecture": "SCMP_ARCH_AARCH64", "subArchitectures": ["SCMP_ARCH_ARM"] }
+  ],
+  "syscalls": [
+    {
+      "names": ["add_key", "request_key", "keyctl"],
+      "action": "SCMP_ACT_ERRNO",
+      "errnoRet": 1
+    }
+  ]
+}

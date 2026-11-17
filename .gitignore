@@ -1,0 +1,51 @@
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Primary Makefile build outputs
+/keyringer
+/keyringer-dyn
+/keyringer.aarch64
+/kr_core.o
+/libkeyringer.a
+/libkeyringer.so
+
+# Compiled unit-test payloads and harnesses (sources remain tracked)
+/test/fuzz_elf
+/test/fuzz_elf-asan
+/test/fuzz_elf-g
+/test/fuzz_wire
+/test/fuzz_wire-asan
+/test/kr_fuzz_server
+/test/hello
+/test/hello_a64
+/test/lib.so
+/test/libuser
+/test/shellcode.bin
+/test/shellcode.o
+/test/shellcode7.bin
+/test/shellcode7.o
+
+# QEMU and VM downloads, extracted trees, staged binaries, and generated images
+/test/a64vm/dl/
+/test/a64vm/boot/
+/test/a64vm/modloop/
+/test/a64vm/stage/
+/test/a64vm/join
+/test/a64vm/overlay.cpio.gz
+/test/a64vm/vm-initramfs.img
+/test/a64vm/*.log
+/test/a64vm-debian/dl/
+/test/a64vm-debian/modtree/
+/test/a64vm-debian/modtree-deb/
+/test/a64vm-debian/stage/
+/test/a64vm-debian/join
+/test/a64vm-debian/overlay.cpio.gz
+/test/a64vm-debian/vm-initramfs.img
+/test/a64vm-debian/boot.log
+
+# Crash dumps and local diagnostic scratch
+*.core
+.dbg.peer.out
+.dbg.port
+*.tmp

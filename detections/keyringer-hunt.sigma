@@ -1,0 +1,54 @@
+title: Kernel keyring stash to userland-exec (Keyringer/Dntry class)
+id: 6d1c5f2a-7b34-4e88-9a51-keyringer001
+status: experimental
+description: >
+  Detects the add_key -> keyctl(READ) -> keyctl(REVOKE) stash pattern followed
+  by PROT_EXEC mapping activity from the same process, without any execve.
+  This is the signature of kernel-keyring fileless ELF loaders (Keyringer,
+  Dntry). Correlate on host/auid; the process keeps its PID throughout because
+  it never execs.
+references:
+  - https://matheuzsecurity.github.io/hacking/linux-kernel-keyring-fileless-exec/
+author: Keyringer detections
+date: 2026-09-13
+tags:
+  - attack.defense_evasion
+  - attack.t1620        # Reflective Code Loading
+  - attack.t1564.001    # Hidden Artifacts
+logsource:
+  product: linux
+  service: auditd
+detection:
+    selection_addkey:
+        type: SYSCALL
+        syscall: add_key
+        key_enforced|contains:
+            - 'user'          # default chunk type
+            - 'big_key'       # --type big_key variant (100000-byte chunks)
+    selection_keyctl_read:
+        type: SYSCALL
+        syscall: keyctl
+        a0: '11'          # KEYCTL_READ
+    selection_keyctl_revoke:
+        type: SYSCALL
+        syscall: keyctl
+        a0: '3'           # KEYCTL_REVOKE
+    selection_keepalive:
+        type: SYSCALL
+        syscall: keyctl
+        a0:
+            - '22'        # KEYCTL_GET_PERSISTENT — keepalive expiry refresh
+            - '10'        # KEYCTL_SEARCH — keepalive chunk probe
+    filter_benign:
+        comm:
+            - 'gnome-keyring*'
+            - 'ssh*'
+            - 'systemd*'
+    timeframe: 5s
+    condition: |
+        (selection_addkey | near selection_keyctl_read and selection_keyctl_revoke
+        and not filter_benign)
+        or (selection_keepalive | near selection_keepalive and not filter_benign)
+falsepositives:
+    - Applications legitimately using the keyring retention facility (rare; gnome-keyring and ssh-agent use other patterns)
+level: high

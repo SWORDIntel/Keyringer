@@ -1,0 +1,81 @@
+#!/usr/bin/env bpftrace
+/*
+ * kr_hunt.bt — bpftrace hunt for the kernel-keyring stash -> userland-exec
+ * pattern (Keyringer/Dntry-class tools): add_key("user", ...) stashing,
+ * keyctl READ/REVOKE, then PROT_EXEC mmap/mprotect and PR_SET_NAME in the
+ * same process. Run as root:
+ *
+ *   sudo bpftrace detections/kr_hunt.bt
+ *
+ * Output is per-event; correlate pid/comm by hand, or use kr_hunt.py (BCC)
+ * for automatic pattern correlation. No execve/memfd fires for this class,
+ * so PROT_EXEC mapping + keyctl churn on one pid IS the detection.
+ *
+ * keyctl cmd 22 (GET_PERSISTENT) + 10 (SEARCH) without any add_key is the
+ * keepalive signature: periodic expiry refresh of a persistent ring stashed
+ * earlier. cmd 5 (UPDATE) on stash serials is its live-refresh variant.
+ *
+ * [reqkey  ] request_key("user", <desc>, ...) repeated for the SAME
+ * description, mostly failing ENOKEY, is the beacon-polling signature of a
+ * keyring dead-drop C2 (kr-kit exhibit 09-chan-keyring): between commands
+ * the beacon emits NOTHING else — no add_key, no keyctl — so without a
+ * request_key probe its heartbeat is invisible to this hunter. >= 5 polls
+ * of one description in kr_hunt.py's window is its BEACON-POLL alert.
+ */
+
+/*
+ * NOTE: this kernel (pve 7.0.14) never delivers events from the
+ * tracepoint:syscalls:sys_enter_add_key probe (keyctl's tracepoint works;
+ * strace + kprobe confirm the syscall itself fires), so the add_key probe
+ * is a kprobe on the syscall stub reading the payload length from the
+ * 4th syscall register (r10 on x86-64).
+ *
+ * sys_enter_request_key has the SAME silent non-delivery here, verified
+ * live: a probe attaching both forms saw 6/6 poll syscalls on
+ * kprobe:__x64_sys_request_key and 0/6 on the tracepoint. So request_key
+ * is ALSO a kprobe on the syscall stub, reading the description (2nd
+ * syscall arg, si) as a user string — uptr() routes str() through
+ * bpf_probe_read_user_str (bpftrace >= 0.14; without the cast a plain
+ * str() does a kernel-space read that faults on user pages under SMAP).
+ */
+kprobe:__x64_sys_add_key
+{
+    $regs = (struct pt_regs *)arg0;
+    printf("[add_key ] pid=%-7d comm=%-16s plen=%d\n", pid, comm, $regs->r10);
+}
+
+kprobe:__x64_sys_request_key
+{
+    $regs = (struct pt_regs *)arg0;
+    printf("[reqkey  ] pid=%-7d comm=%-16s desc=%s\n", pid, comm,
+           str(uptr($regs->si)));
+}
+
+tracepoint:syscalls:sys_enter_keyctl
+/args->option == 11 || args->option == 3 || args->option == 5 ||
+ args->option == 10 || args->option == 22/
+{
+    printf("[keyctl  ] pid=%-7d comm=%-16s cmd=%d %s\n", pid, comm, args->option,
+           args->option == 11 ? "READ" :
+           args->option == 3  ? "REVOKE" :
+           args->option == 5  ? "UPDATE" :
+           args->option == 10 ? "SEARCH" : "GET_PERSISTENT");
+}
+
+tracepoint:syscalls:sys_enter_mmap
+/args->prot & 0x4/
+{
+    printf("[mmap+X  ] pid=%-7d comm=%-16s prot=%d\n", pid, comm, args->prot);
+}
+
+tracepoint:syscalls:sys_enter_mprotect
+/args->prot & 0x4/
+{
+    printf("[mprot+X ] pid=%-7d comm=%-16s prot=%d\n", pid, comm, args->prot);
+}
+
+tracepoint:syscalls:sys_enter_prctl
+/args->option == 15/
+{
+    printf("[setname ] pid=%-7d comm=%-16s (PR_SET_NAME)\n", pid, comm);
+}

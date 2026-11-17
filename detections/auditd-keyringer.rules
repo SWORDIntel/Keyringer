@@ -1,0 +1,25 @@
+# auditd-keyringer.rules — auditd rules for kernel-keyring fileless-exec hunting
+#
+# Install:   cp auditd-keyringer.rules /etc/audit/rules.d/
+#            augenrules --load   (or: auditctl -R auditd-keyringer.rules)
+# Hunt:      ausearch -k keyring_stash --format text | less
+#
+# NOTE: auditd/auditctl are NOT part of a minimal Keyringer test box; these
+# rules are for operators with auditd present. On this box the equivalent
+# live detection is kr_hunt.py (BCC) or kr_hunt.bt (bpftrace).
+#
+# Log every add_key/request_key/keyctl invocation. The
+# add_key->keyctl(READ)->keyctl(REVOKE) triple followed by no execve is the
+# Keyringer/Dntry signature; PROT_EXEC mmap/mprotect from the same pid
+# shortly after confirms userland exec. request_key covers the other half:
+# a dead-drop beacon (kr-kit exhibit 09-chan-keyring) polls
+# request_key("user", <desc>) for the same description, ENOKEY each time —
+# between commands that poll is the ONLY syscall it emits, so without
+# -S request_key the heartbeat never reaches the audit log.
+
+-a always,exit -F arch=b64 -S add_key -S request_key -S keyctl -F auid>=1000 -k keyring_stash
+-a always,exit -F arch=b32 -S add_key -S request_key -S keyctl -F auid>=1000 -k keyring_stash
+
+# Optionally drop the auid filters to also cover daemons/cron:
+# -a always,exit -F arch=b64 -S add_key -S request_key -S keyctl -k keyring_stash
+# -a always,exit -F arch=b32 -S add_key -S request_key -S keyctl -k keyring_stash
